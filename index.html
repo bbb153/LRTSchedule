@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>507 往田景 班次</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #1a1a2e);
+            color: var(--tg-theme-text-color, #eee);
+            padding: 16px;
+            min-height: 100vh;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .live-badge {
+            display: inline-block;
+            background: #e63946;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        .station-name {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 12px 0 4px;
+        }
+        .route-badge {
+            background: #d62828;
+            color: white;
+            padding: 4px 16px;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .destination {
+            color: var(--tg-theme-hint-color, #aaa);
+            margin-top: 8px;
+        }
+        .train-card {
+            background: var(--tg-theme-secondary-bg-color, #252542);
+            border-radius: 16px;
+            padding: 20px;
+            margin: 16px 0;
+        }
+        .next-label {
+            color: var(--tg-theme-hint-color, #aaa);
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        .time-display {
+            font-size: 48px;
+            font-weight: bold;
+            color: #4ade80;
+        }
+        .time-display.arriving {
+            color: #e63946;
+        }
+        .train-details {
+            display: flex;
+            gap: 16px;
+            margin-top: 12px;
+            color: var(--tg-theme-hint-color, #aaa);
+        }
+        .upcoming {
+            margin-top: 24px;
+        }
+        .upcoming-title {
+            font-size: 14px;
+            color: var(--tg-theme-hint-color, #aaa);
+            margin-bottom: 12px;
+        }
+        .upcoming-train {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--tg-theme-secondary-bg-color, #333);
+        }
+        .other-routes {
+            margin-top: 24px;
+        }
+        .other-train {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--tg-theme-secondary-bg-color, #333);
+        }
+        .other-route-num {
+            background: #3b82f6;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            min-width: 40px;
+            text-align: center;
+        }
+        .update-time {
+            text-align: center;
+            color: var(--tg-theme-hint-color, #888);
+            font-size: 12px;
+            margin-top: 20px;
+        }
+        .error {
+            text-align: center;
+            padding: 40px;
+            color: #e63946;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <span class="live-badge">🔴 實時 LIVE</span>
+        <div class="station-name">良景站</div>
+        <div style="color: var(--tg-theme-hint-color, #aaa); font-size: 14px;">Leung King Station</div>
+        <div style="margin-top: 12px;">
+            <span class="route-badge">507</span>
+        </div>
+        <div class="destination">往 田景 To Tin King</div>
+    </div>
+    
+    <div id="content">
+        <div class="loading">載入中 Loading...</div>
+    </div>
+    
+    <div class="update-time" id="updateTime"></div>
+
+    <script>
+        const API_URL = 'https://rt.data.gov.hk/v1/transport/mtr/lrt/getSchedule?station_id=240';
+        
+        async function fetchSchedule() {
+            try {
+                const response = await fetch(API_URL);
+                const data = await response.json();
+                
+                if (data.status !== 1) {
+                    throw new Error('API error');
+                }
+                
+                renderSchedule(data);
+            } catch (error) {
+                document.getElementById('content').innerHTML = `
+                    <div class="error">
+                        <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
+                        <div>無法取得班次資料</div>
+                        <div style="font-size: 14px; margin-top: 8px;">Unable to fetch schedule</div>
+                    </div>
+                `;
+            }
+        }
+        
+        function renderSchedule(data) {
+            const target507 = [];
+            const otherTrains = [];
+            
+            for (const platform of data.platform_list) {
+                for (const train of platform.route_list) {
+                    const trainInfo = {...train, platform: platform.platform_id};
+                    
+                    if (train.route_no === '507' && train.dest_en === 'Tin King') {
+                        target507.push(trainInfo);
+                    } else if (platform.platform_id === 1) {
+                        otherTrains.push(trainInfo);
+                    }
+                }
+            }
+            
+            // Sort by time
+            const parseTime = (t) => {
+                if (t.time_en === '-') return 0;
+                const match = t.time_en.match(/(\d+)/);
+                return match ? parseInt(match[1]) : 999;
+            };
+            
+            target507.sort((a, b) => parseTime(a) - parseTime(b));
+            otherTrains.sort((a, b) => parseTime(a) - parseTime(b));
+            
+            let html = '';
+            
+            if (target507.length === 0) {
+                html = `
+                    <div class="train-card">
+                        <div style="text-align: center; padding: 20px;">
+                            <div style="font-size: 32px; margin-bottom: 12px;">😴</div>
+                            <div>暫無班次</div>
+                            <div style="font-size: 14px; color: var(--tg-theme-hint-color, #aaa);">No trains available</div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                const next = target507[0];
+                const isArriving = next.time_en === '-';
+                const timeDisplay = isArriving ? '到站' : next.time_ch;
+                
+                html = `
+                    <div class="train-card">
+                        <div class="next-label">下一班 Next Train</div>
+                        <div class="time-display ${isArriving ? 'arriving' : ''}">${timeDisplay}</div>
+                        <div class="train-details">
+                            <span>📍 月台 ${next.platform}</span>
+                            <span>🚃 ${next.train_length} 卡</span>
+                        </div>
+                    </div>
+                `;
+                
+                if (target507.length > 1) {
+                    html += `<div class="upcoming"><div class="upcoming-title">之後班次 Upcoming</div>`;
+                    for (let i = 1; i < Math.min(target507.length, 4); i++) {
+                        const train = target507[i];
+                        const time = train.time_en === '-' ? '到站' : train.time_ch;
+                        html += `
+                            <div class="upcoming-train">
+                                <span>${time}</span>
+                                <span>${train.train_length} 卡</span>
+                            </div>
+                        `;
+                    }
+                    html += `</div>`;
+                }
+            }
+            
+            if (otherTrains.length > 0) {
+                html += `<div class="other-routes"><div class="upcoming-title">其他路線 Other Routes</div>`;
+                for (const train of otherTrains.slice(0, 5)) {
+                    const time = train.time_en === '-' ? '到站' : train.time_ch;
+                    html += `
+                        <div class="other-train">
+                            <div>
+                                <span class="other-route-num">${train.route_no}</span>
+                                <span style="margin-left: 8px;">${train.dest_ch}</span>
+                            </div>
+                            <span>${time}</span>
+                        </div>
+                    `;
+                }
+                html += `</div>`;
+            }
+            
+            document.getElementById('content').innerHTML = html;
+            document.getElementById('updateTime').textContent = `更新時間 ${data.system_time}`;
+        }
+        
+        // Initial fetch
+        fetchSchedule();
+        
+        // Auto-refresh every 15 seconds
+        setInterval(fetchSchedule, 15000);
+        
+        // Telegram WebApp ready
+        if (window.Telegram && window.Telegram.WebApp) {
+            Telegram.WebApp.ready();
+            Telegram.WebApp.expand();
+        }
+    </script>
+</body>
+</html>
